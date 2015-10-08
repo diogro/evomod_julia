@@ -11,3 +11,7 @@
 # produced vignettes
 vignettes/*.html
 vignettes/*.pdf
+
+#notebook checkpoints
+.ipynb_checkpoints/
+.ipynb_checkpoints/*
