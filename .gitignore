@@ -16,3 +16,6 @@ vignettes/*.pdf
 .ipynb_checkpoints/
 .ipynb_checkpoints/*
 figures
+
+data/*
+data
