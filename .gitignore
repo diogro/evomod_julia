@@ -19,3 +19,8 @@ figures
 
 data/*
 data
+
+# Julia
+Manifest.toml
+notebooks/figures
+notebooks/data
