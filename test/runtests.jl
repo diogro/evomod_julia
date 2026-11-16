@@ -9,6 +9,7 @@ const A = EvoMod.Antagonistic
 const PV = EvoMod.PleiotropicVectors
 const GR = EvoMod.Growth
 const BM = EvoMod.BMatrix
+const ML = EvoMod.Multilinear
 
 @testset "EvoMod" begin
 
@@ -25,7 +26,11 @@ const BM = EvoMod.BMatrix
     @test EvoMod.Common.is_directional("Direct")
 end
 
-# Generic checks for the three discrete-generation models
+# Full heritable state of allele `a`: effect and its column of b, or the
+# effect vector (Multilinear)
+allele(ind, a) = hasproperty(ind, :b) ? (ind.y[a], ind.b[:, a]) : ind.y[:, a]
+
+# Generic checks for the discrete-generation models
 function check_generations(M, base_ind; n = 60)
     Random.seed!(1)
     pop = M.Population(n, base_ind)
@@ -41,9 +46,8 @@ function check_generations(M, base_ind; n = 60)
     kid = deepcopy(pop[3])
     M.cross!(pop[1], pop[2], kid, a1, a2)
     for l in 1:(base_ind.m ÷ 2)
-        @test kid.y[2l - 1] == pop[1].y[2l - 1 + a1[l]]
-        @test kid.y[2l] == pop[2].y[2l - 1 + a2[l]]
-        @test kid.b[:, 2l] == pop[2].b[:, 2l - 1 + a2[l]]
+        @test allele(kid, 2l - 1) == allele(pop[1], 2l - 1 + a1[l])
+        @test allele(kid, 2l) == allele(pop[2], 2l - 1 + a2[l])
     end
 
     # a generation step does not write offspring into the parents
@@ -57,8 +61,9 @@ function check_generations(M, base_ind; n = 60)
     @test isempty(intersect(Set(objectid.(pop.pop)), Set(objectid.(parent_objects))))
     # offspring alleles are alleles of the same locus in the right parent
     # (exact unless the parent's allele mutated this generation)
-    matches = [pop[i].y[k] in parents_before[isodd(k) ? sires[i] : dames[i]].y[(2 * ((k + 1) ÷ 2) - 1):(2 * ((k + 1) ÷ 2))]
-               for i in 1:n, k in 1:base_ind.m]
+    matches = [let parent = parents_before[isodd(k) ? sires[i] : dames[i]], l = (k + 1) ÷ 2
+                   allele(pop[i], k) in (allele(parent, 2l - 1), allele(parent, 2l))
+               end for i in 1:n, k in 1:base_ind.m]
     @test mean(matches) > 0.95
 
     # directional selection drags the population towards the moving optimum
@@ -178,6 +183,68 @@ end
     @test length(run.moments) == 10
     @test 0 < run.moments[end]["adults"] < 1
     @test run.moments[end]["theta"] ≈ fill(0.58, 4)  # recorded before the 30th move
+end
+
+@testset "Multilinear" begin
+    Random.seed!(10)
+    p, loci = 3, 6
+    eps = ML.random_epsilon(p; sd = 0.5)
+    @test all(k -> issymmetric(eps[k, :, :]), 1:p)
+    @test_throws ArgumentError ML.Params(loci, p; mu = 0.1, mutation_cov = 0.1, epsilon = rand(p, p, p))
+    @test_throws ArgumentError ML.Params(loci, p; mu = 0.1, mutation_cov = 0.1, epsilon = zeros(p, p, p + 1))
+    @test_throws ArgumentError ML.Params(loci, p; mu = 0.1, mutation_cov = zeros(p, p))
+
+    add = ML.Params(loci, p; mu = 0.1, mutation_cov = 0.1)
+    epi = ML.Params(loci, p; mu = 0.1, mutation_cov = 0.1, epsilon = eps)
+    zero_eps = ML.Params(loci, p; mu = 0.1, mutation_cov = 0.1, epsilon = zeros(p, p, p))
+    y = randn(p, 2loci)
+    Y = ML.locus_effects(y)
+    @test Y[:, 2] == y[:, 3] + y[:, 4]
+
+    # additive model: sum of allele vectors; epsilon = 0 gives the same
+    @test ML.genotypic_value(add, y) ≈ vec(sum(y, dims = 2))
+    @test ML.genotypic_value(zero_eps, y) ≈ ML.genotypic_value(add, y)
+
+    # fast pairwise sum equals the explicit sum over pairs of loci
+    naive = vec(sum(Y, dims = 2))
+    for i in 1:loci, j in (i + 1):loci, k in 1:p
+        naive[k] += Y[:, i]' * eps[k, :, :] * Y[:, j]
+    end
+    @test ML.genotypic_value(epi, y) ≈ naive
+
+    # univariate case: x = sum(Y) + ε sum_{i<j} Y_i Y_j
+    uni = ML.Params(loci, 1; mu = 0.1, mutation_cov = 0.1, epsilon = fill(0.3, 1, 1, 1))
+    y1 = randn(1, 2loci); Y1 = vec(ML.locus_effects(y1))
+    @test ML.genotypic_value(uni, y1)[1] ≈ sum(Y1) + 0.3 * sum(Y1[i] * Y1[j] for i in 1:loci for j in (i + 1):loci)
+
+    # local effects: removing locus i changes x by its local effect
+    L = ML.local_effects(epi, y)
+    y0 = copy(y); y0[:, 5:6] .= 0
+    @test ML.genotypic_value(epi, y) - ML.genotypic_value(epi, y0) ≈ L[:, 3]
+    @test ML.local_effects(add, y) ≈ Y
+
+    # mutation adds MvNormal(0, M) steps
+    M = [1.0 0.5 0; 0.5 1 0; 0 0 0.2]
+    par = ML.Params(1, p; mu = 1.0, mutation_cov = M)
+    steps = reduce(hcat, begin
+        ind = ML.RandomInd(ML.Individual(par)); y_before = copy(ind.y)
+        ML.mutation!(ind, ML.Binomial(1, 1.0), ML.MvNormal(zeros(p), par.mutation_cov))
+        vec(sum(ind.y - y_before, dims = 2))
+    end for _ in 1:20_000)
+    @test cov(steps') ≈ M atol = 0.05
+
+    # parameters are shared, not copied
+    pop = ML.Population(10, epi); ML.RandomPop!(pop)
+    @test copy(pop)[1].par === epi
+    @test all(ind -> all(iszero, ind.y), pop.pop)   # init_sigma = 0: reference genotype
+
+    # generic generation checks, additive and epistatic
+    for par in (ML.Params(20, 4; mu = 0.01, mutation_cov = 0.1, v_e = 0.5, init_sigma = 0.1),
+                ML.Params(20, 4; mu = 0.01, mutation_cov = 0.1, v_e = 0.5, init_sigma = 0.1,
+                          epsilon = ML.random_epsilon(4; sd = 0.05)))
+        run = check_generations(ML, ML.Individual(par))
+        @test run[1].x ≈ ML.genotypic_value(par, run[1].y)
+    end
 end
 
 @testset "BMatrix" begin

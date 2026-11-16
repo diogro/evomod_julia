@@ -10,6 +10,7 @@ Each model is a submodule with the same interface (`Individual`,
 - `EvoMod.PleiotropicVectors`: continuous pleiotropic vectors, optional epistasis
 - `EvoMod.Growth`: overlapping generations with juveniles and adults
 - `EvoMod.BMatrix`: annealing search for B matrices matching a correlation matrix
+- `EvoMod.Multilinear`: multivariate allelic effects, additive or with pairwise multilinear epistasis
 
 Load one model at a time with `using EvoMod.BinaryB`; shared helpers
 (`twoModuleMatrix`, `AVGcorr`, ...) are in `EvoMod.Common`.
@@ -22,9 +23,10 @@ include("Antagonistic.jl")
 include("PleiotropicVectors.jl")
 include("Growth.jl")
 include("BMatrix.jl")
+include("Multilinear.jl")
 
 using .Common
-export Common, BinaryB, Antagonistic, PleiotropicVectors, Growth, BMatrix,
+export Common, BinaryB, Antagonistic, PleiotropicVectors, Growth, BMatrix, Multilinear,
        twoModuleMatrix, lowerTri, AVGcorr, AVGratio
 
 end

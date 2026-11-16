@@ -17,8 +17,20 @@ package with that model and several extensions:
 | `EvoMod.PleiotropicVectors` | Continuous pleiotropic vectors, optional pairwise epistasis |
 | `EvoMod.Growth` | Overlapping generations: juveniles, adults, mortality |
 | `EvoMod.BMatrix` | Annealing search for a `b` whose row correlations match a target |
+| `EvoMod.Multilinear` | Allelic effect vectors; additive, or pairwise multilinear epistasis (Hansen & Wagner 2001) |
 
 Each model module documents its assumptions (`?EvoMod.BinaryB` in the REPL).
+
+This package is used to prototype models and to cross-check the R package
+evomod2. The multilinear model, for example:
+
+```julia
+julia> using EvoMod, EvoMod.Multilinear, LinearAlgebra
+julia> eps = random_epsilon(2; sd = 0.05)          # p x p x p, symmetric in the last two indices
+julia> par = Params(50, 2; mu = 0.005, mutation_cov = 0.05, v_e = 1.0, epsilon = eps)
+julia> pop = run_pop(par, 1000, ["Stab", "Direct"], [2000, 2000];
+                     delta_theta = [0.005, 0.0], omega = 20 * Matrix(1.0I, 2, 2), thin = 20)
+```
 
 Requirements
 ------------
