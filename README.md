@@ -22,7 +22,42 @@ package with that model and several extensions:
 Each model module documents its assumptions (`?EvoMod.BinaryB` in the REPL).
 
 This package is used to prototype models and to cross-check the R package
-evomod2. The multilinear model, for example:
+[evomod2](https://github.com/diogro/evomod2).
+
+### EvoMod.Sim: the evomod2 engine in Julia
+
+`EvoMod.Sim` has everything evomod2 has, with the same function names:
+
+| Component | Functions |
+|---|---|
+| Architectures | `additive`, `multilinear` (with `random_epsilon` or `pairwise_epsilon`), `binary_b`, `contribution_matrix` |
+| Mutation | `mutation`, `hoc_mutation`, `binary_b_mutation`, `contribution_mutation` (`persistence` keyword) |
+| Recombination | `free_recombination`, `genetic_map`, `linkage` |
+| Life cycles | `wright_fisher`, `moran`, `viability_selection` |
+| Regimes | `drift`, `stabilizing`, `directional`, `fluctuating` |
+| Results | `trait_means`, `variances`, `g_matrices` (`component = :genic` / `:ld`), `p_matrices`, `mean_fitness`, `genomes` |
+| Analysis | `g_decomposition` (`method = :shuffle`), `shuffle_genomes`, `additive_covariance`, `mutational_covariance`, `genotypic_values`, `local_effects`, `avg_corr`, `autonomy`, `mean_autonomy`, `eigen_variance` |
+
+```julia
+julia> using EvoMod.Sim, LinearAlgebra
+julia> model = evomod_model(binary_b(50, 4), binary_b_mutation(0.0005, 0.2, 0.0001);
+                            env_sd = 0.8, init_sd = 0.2, life_cycle = moran())
+julia> pop = evolve(model, [drift(500), stabilizing(2000; omega = 10),
+                            fluctuating(2000; every = 10, step = 0.2, omega = 10, structure = [[1, 2], [3, 4]])];
+                    n = 1000, record_every = 50, seed = 1)
+julia> trait_means(pop); g_matrices(pop); mutational_covariance(pop)
+```
+
+Keyword arguments replace R's named arguments (`stabilizing(2000; omega = 10)`),
+symbols replace strings (`structure = :independent`, `method = :shuffle`),
+and recorded matrices are `Dict`s keyed by generation. Random numbers come
+from Julia's generator, so results agree with evomod2 in distribution, not
+number for number; `validation/cross_check_sim.R` in evomod2 compares the
+two.
+
+### Other models
+
+The original models of this package are submodules of their own. The multilinear model, for example:
 
 ```julia
 julia> using EvoMod, EvoMod.Multilinear, LinearAlgebra
